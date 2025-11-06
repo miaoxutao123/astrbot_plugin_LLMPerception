@@ -32,7 +32,7 @@ PLATFORM_DISPLAY_NAMES = {
 }
 
 
-@register("add_time", "miaomiao", "让每次请求都携带这次请求的时间", "1.0.0")
+@register("add_time", "miaomiao", "让每次请求都携带这次请求的时间", "1.1.0")
 class MyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -113,9 +113,42 @@ class MyPlugin(Star):
             time_period = "深夜"
         info_parts.append(time_period)
 
-        return ", ".join(info_parts)
+        safe_parts = [str(part) for part in info_parts if part]
+        return ", ".join(safe_parts)
 
-    def _get_platform_info(self, event: AstrMessageEvent) -> str:
+    async def _get_group_name(self, event: AstrMessageEvent) -> str | None:
+        """优先从消息对象中读取群名称，否则调用协议端接口获取"""
+        message_obj = getattr(event, "message_obj", None)
+        group_obj = getattr(message_obj, "group", None) if message_obj else None
+        if group_obj:
+            group_name = getattr(group_obj, "group_name", None)
+            if group_name:
+                return group_name
+
+        get_group_fn = getattr(event, "get_group", None)
+        if not callable(get_group_fn):
+            return None
+
+        group_id = ""
+        if hasattr(event, "get_group_id"):
+            group_id = event.get_group_id()
+        elif message_obj:
+            group_id = getattr(message_obj, "group_id", "")
+
+        if not group_id:
+            return None
+
+        try:
+            group_info = await get_group_fn()
+        except Exception as exc:
+            logger.debug(f"LLMPerception: 获取群聊信息失败: {exc}")
+            return None
+
+        if group_info and getattr(group_info, "group_name", None):
+            return group_info.group_name
+        return None
+
+    async def _get_platform_info(self, event: AstrMessageEvent) -> str:
         """获取平台环境信息"""
         if not self.enable_platform:
             return ""
@@ -127,12 +160,33 @@ class MyPlugin(Star):
         platform_display = PLATFORM_DISPLAY_NAMES.get(platform_name, platform_name)
         info_parts.append(f"平台: {platform_display}")
 
-        # 判断是群聊还是私聊（通过 MessageType 判断）
+        # 判断是群聊还是私聊，优先使用 AstrMessageEvent 提供的接口
+        message_type = None
+        if hasattr(event, "get_message_type"):
+            message_type = event.get_message_type()
+        elif getattr(event, "message_obj", None):
+            message_type = event.message_obj.type
 
-        if event.message_obj and event.message_obj.type == MessageType.GROUP_MESSAGE:
+        is_group_chat = False
+        if message_type == MessageType.GROUP_MESSAGE:
             info_parts.append("群聊")
-        elif event.message_obj and event.message_obj.type == MessageType.FRIEND_MESSAGE:
+            is_group_chat = True
+        elif message_type == MessageType.FRIEND_MESSAGE:
             info_parts.append("私聊")
+        else:
+            group_id = ""
+            if hasattr(event, "get_group_id"):
+                group_id = event.get_group_id()
+            elif getattr(event, "message_obj", None):
+                group_id = getattr(event.message_obj, "group_id", "")
+            if group_id:
+                info_parts.append("群聊")
+                is_group_chat = True
+
+        if is_group_chat:
+            group_name = await self._get_group_name(event)
+            if group_name:
+                info_parts.append(f"群名: {group_name}")
 
         # 消息类型
         message_chain = event.message_obj
@@ -167,7 +221,7 @@ class MyPlugin(Star):
             perception_parts.append(holiday_info)
 
         # 添加平台信息
-        platform_info = self._get_platform_info(event)
+        platform_info = await self._get_platform_info(event)
         if platform_info:
             perception_parts.append(platform_info)
 

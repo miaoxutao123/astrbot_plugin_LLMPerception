@@ -1,5 +1,5 @@
 name: astrbot_plugin_LLMPerception
 desc: 增强 LLM 环境感知能力：时间、节假日、平台环境感知
-version: v1.0.0
+version: v1.1.0
 author: 喵喵
 repo: https://github.com/miaoxutao123/astrbot_plugin_LLMPerception
