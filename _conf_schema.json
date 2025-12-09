@@ -17,6 +17,24 @@
         "default": true,
         "hint": "启用后会在消息中携带平台类型（QQ/Telegram等）、是否群聊、消息类型等环境信息"
     },
+    "enable_lunar_perception": {
+        "type": "bool",
+        "description": "启用农历感知",
+        "default": true,
+        "hint": "启用后会在消息中携带农历日期信息（如：腊月廿三）"
+    },
+    "enable_solar_term_perception": {
+        "type": "bool",
+        "description": "启用节气感知",
+        "default": true,
+        "hint": "启用后会在消息中携带当前节气信息（如：立春、雨水等二十四节气）"
+    },
+    "enable_almanac_perception": {
+        "type": "bool",
+        "description": "启用黄历感知",
+        "default": false,
+        "hint": "启用后会在消息中携带黄历宜忌信息（注意：黄历信息仅供娱乐参考）"
+    },
     "holiday_country": {
         "type": "string",
         "description": "节假日所属国家/地区",
