@@ -9,34 +9,85 @@ from astrbot.api.provider import ProviderRequest
 from astrbot.api.star import Context, Star, register
 from astrbot.api.all import AstrBotConfig
 from astrbot.core.platform.message_type import MessageType
-try:
-    import chinese_calendar as calendar_cn
-    CHINESE_CALENDAR_AVAILABLE = True
-except ImportError:
-    CHINESE_CALENDAR_AVAILABLE = False
-    logger.warning("chinese-calendar 库未安装，节假日识别功能将受限")
 
-try:
-    from lunarcalendar import Converter, Solar
-    LUNAR_CALENDAR_AVAILABLE = True
-except ImportError:
-    LUNAR_CALENDAR_AVAILABLE = False
-    logger.warning("lunarcalendar 库未安装，农历/节气/黄历功能将不可用")
+import chinese_calendar as calendar_cn
+from lunarcalendar import Converter, Solar
 
 
 # 农历月份和日期的中文表示
-LUNAR_MONTHS = ["正月", "二月", "三月", "四月", "五月", "六月",
-                "七月", "八月", "九月", "十月", "冬月", "腊月"]
-LUNAR_DAYS = ["初一", "初二", "初三", "初四", "初五", "初六", "初七", "初八", "初九", "初十",
-              "十一", "十二", "十三", "十四", "十五", "十六", "十七", "十八", "十九", "二十",
-              "廿一", "廿二", "廿三", "廿四", "廿五", "廿六", "廿七", "廿八", "廿九", "三十"]
+LUNAR_MONTHS = [
+    "正月",
+    "二月",
+    "三月",
+    "四月",
+    "五月",
+    "六月",
+    "七月",
+    "八月",
+    "九月",
+    "十月",
+    "冬月",
+    "腊月",
+]
+LUNAR_DAYS = [
+    "初一",
+    "初二",
+    "初三",
+    "初四",
+    "初五",
+    "初六",
+    "初七",
+    "初八",
+    "初九",
+    "初十",
+    "十一",
+    "十二",
+    "十三",
+    "十四",
+    "十五",
+    "十六",
+    "十七",
+    "十八",
+    "十九",
+    "二十",
+    "廿一",
+    "廿二",
+    "廿三",
+    "廿四",
+    "廿五",
+    "廿六",
+    "廿七",
+    "廿八",
+    "廿九",
+    "三十",
+]
 
 # 二十四节气
 SOLAR_TERMS = [
-    "小寒", "大寒", "立春", "雨水", "惊蛰", "春分",
-    "清明", "谷雨", "立夏", "小满", "芒种", "夏至",
-    "小暑", "大暑", "立秋", "处暑", "白露", "秋分",
-    "寒露", "霜降", "立冬", "小雪", "大雪", "冬至"
+    "小寒",
+    "大寒",
+    "立春",
+    "雨水",
+    "惊蛰",
+    "春分",
+    "清明",
+    "谷雨",
+    "立夏",
+    "小满",
+    "芒种",
+    "夏至",
+    "小暑",
+    "大暑",
+    "立秋",
+    "处暑",
+    "白露",
+    "秋分",
+    "寒露",
+    "霜降",
+    "立冬",
+    "小雪",
+    "大雪",
+    "冬至",
 ]
 
 # 天干地支
@@ -45,11 +96,50 @@ DI_ZHI = ["子", "丑", "寅", "卯", "辰", "巳", "午", "未", "申", "酉", 
 SHENG_XIAO = ["鼠", "牛", "虎", "兔", "龙", "蛇", "马", "羊", "猴", "鸡", "狗", "猪"]
 
 # 黄历宜忌（简化版，基于日期的简单算法）
-YI_ITEMS = ["祭祀", "祈福", "求嗣", "开光", "出行", "解除", "动土", "起基",
-            "开市", "交易", "立券", "挂匾", "安床", "入宅", "移徙", "栽种",
-            "纳畜", "入殓", "安葬", "启钻", "除服", "成服", "修造", "竖柱"]
-JI_ITEMS = ["嫁娶", "开市", "安葬", "动土", "破土", "作灶", "安床", "入宅",
-            "移徙", "出行", "祭祀", "祈福", "开光", "纳采", "订盟", "造庙"]
+YI_ITEMS = [
+    "祭祀",
+    "祈福",
+    "求嗣",
+    "开光",
+    "出行",
+    "解除",
+    "动土",
+    "起基",
+    "开市",
+    "交易",
+    "立券",
+    "挂匾",
+    "安床",
+    "入宅",
+    "移徙",
+    "栽种",
+    "纳畜",
+    "入殓",
+    "安葬",
+    "启钻",
+    "除服",
+    "成服",
+    "修造",
+    "竖柱",
+]
+JI_ITEMS = [
+    "嫁娶",
+    "开市",
+    "安葬",
+    "动土",
+    "破土",
+    "作灶",
+    "安床",
+    "入宅",
+    "移徙",
+    "出行",
+    "祭祀",
+    "祈福",
+    "开光",
+    "纳采",
+    "订盟",
+    "造庙",
+]
 
 
 # 常量定义
@@ -85,18 +175,18 @@ class MyPlugin(Star):
         try:
             self.timezone = zoneinfo.ZoneInfo(timezone_name)
         except (zoneinfo.ZoneInfoNotFoundError, KeyError) as e:
-            logger.error(f"无效的时区设置 '{timezone_name}': {e}，使用默认时区 Asia/Shanghai")
+            logger.error(
+                f"无效的时区设置 '{timezone_name}': {e}，使用默认时区 Asia/Shanghai"
+            )
             self.timezone = zoneinfo.ZoneInfo("Asia/Shanghai")
             timezone_name = "Asia/Shanghai"
 
         # 记录插件加载信息
-        calendar_status = "已启用" if CHINESE_CALENDAR_AVAILABLE else "受限(未安装chinese-calendar)"
-        lunar_status = "已启用" if LUNAR_CALENDAR_AVAILABLE else "不可用(未安装lunarcalendar)"
         logger.info(
             f"LLMPerception 插件已加载 | 时区: {timezone_name} | "
-            f"节假日感知: {self.enable_holiday}({calendar_status}) | "
+            f"节假日感知: {self.enable_holiday}(已启用) | "
             f"平台感知: {self.enable_platform} | "
-            f"农历感知: {self.enable_lunar}({lunar_status}) | "
+            f"农历感知: {self.enable_lunar}(已启用) | "
             f"节气感知: {self.enable_solar_term} | "
             f"黄历感知: {self.enable_almanac}"
         )
@@ -113,7 +203,7 @@ class MyPlugin(Star):
         info_parts.append(WEEKDAY_NAMES[weekday])
 
         # 使用 chinese-calendar 库进行节假日判断（仅支持中国）
-        if self.holiday_country == "CN" and CHINESE_CALENDAR_AVAILABLE:
+        if self.holiday_country == "CN":
             current_date = date(current_time.year, current_time.month, current_time.day)
 
             # 判断是否为法定节假日
@@ -125,7 +215,11 @@ class MyPlugin(Star):
                 # 获取节日名称
                 # get_holiday_detail 返回 (is_on_holiday, holiday_name) 元组
                 holiday_detail = calendar_cn.get_holiday_detail(current_date)
-                holiday_name = holiday_detail[1] if holiday_detail and holiday_detail[1] else "法定节假日"
+                holiday_name = (
+                    holiday_detail[1]
+                    if holiday_detail and holiday_detail[1]
+                    else "法定节假日"
+                )
 
                 # 区分周末和工作日的法定节假日
                 if weekday >= 5:
@@ -165,7 +259,7 @@ class MyPlugin(Star):
 
     def _get_lunar_info(self, current_time: datetime) -> str:
         """获取农历日期信息"""
-        if not self.enable_lunar or not LUNAR_CALENDAR_AVAILABLE:
+        if not self.enable_lunar:
             return ""
 
         try:
@@ -192,25 +286,37 @@ class MyPlugin(Star):
 
     def _get_solar_term_info(self, current_time: datetime) -> str:
         """获取节气信息"""
-        if not self.enable_solar_term or not LUNAR_CALENDAR_AVAILABLE:
+        if not self.enable_solar_term:
             return ""
 
         try:
             # 节气日期表（简化版，基于平均值）
             # 每个节气大约相隔15天，从小寒开始
             solar_term_dates = [
-                (1, 6), (1, 20),   # 小寒、大寒
-                (2, 4), (2, 19),   # 立春、雨水
-                (3, 6), (3, 21),   # 惊蛰、春分
-                (4, 5), (4, 20),   # 清明、谷雨
-                (5, 6), (5, 21),   # 立夏、小满
-                (6, 6), (6, 21),   # 芒种、夏至
-                (7, 7), (7, 23),   # 小暑、大暑
-                (8, 7), (8, 23),   # 立秋、处暑
-                (9, 8), (9, 23),   # 白露、秋分
-                (10, 8), (10, 23), # 寒露、霜降
-                (11, 7), (11, 22), # 立冬、小雪
-                (12, 7), (12, 22)  # 大雪、冬至
+                (1, 6),
+                (1, 20),  # 小寒、大寒
+                (2, 4),
+                (2, 19),  # 立春、雨水
+                (3, 6),
+                (3, 21),  # 惊蛰、春分
+                (4, 5),
+                (4, 20),  # 清明、谷雨
+                (5, 6),
+                (5, 21),  # 立夏、小满
+                (6, 6),
+                (6, 21),  # 芒种、夏至
+                (7, 7),
+                (7, 23),  # 小暑、大暑
+                (8, 7),
+                (8, 23),  # 立秋、处暑
+                (9, 8),
+                (9, 23),  # 白露、秋分
+                (10, 8),
+                (10, 23),  # 寒露、霜降
+                (11, 7),
+                (11, 22),  # 立冬、小雪
+                (12, 7),
+                (12, 22),  # 大雪、冬至
             ]
 
             current_month = current_time.month
@@ -238,7 +344,10 @@ class MyPlugin(Star):
 
                 # 处理跨年的情况
                 if next_ordinal < this_ordinal:  # 跨年
-                    if current_ordinal >= this_ordinal or current_ordinal < next_ordinal:
+                    if (
+                        current_ordinal >= this_ordinal
+                        or current_ordinal < next_ordinal
+                    ):
                         return f"当前节气: {SOLAR_TERMS[i]}"
                 else:
                     if this_ordinal <= current_ordinal < next_ordinal:
@@ -256,7 +365,9 @@ class MyPlugin(Star):
 
         try:
             # 使用日期生成伪随机的宜忌（基于日期的简单哈希）
-            day_hash = (current_time.year * 10000 + current_time.month * 100 + current_time.day)
+            day_hash = (
+                current_time.year * 10000 + current_time.month * 100 + current_time.day
+            )
 
             # 根据日期哈希选择宜忌项目
             yi_count = (day_hash % 4) + 2  # 2-5个宜
@@ -371,9 +482,11 @@ class MyPlugin(Star):
 
         # 消息类型
         message_chain = event.message_obj
-        if message_chain and hasattr(message_chain, 'message'):
+        if message_chain and hasattr(message_chain, "message"):
             has_image = any(seg.type == "image" for seg in message_chain.message)
-            has_audio = any(seg.type in ["voice", "audio"] for seg in message_chain.message)
+            has_audio = any(
+                seg.type in ["voice", "audio"] for seg in message_chain.message
+            )
             has_video = any(seg.type == "video" for seg in message_chain.message)
 
             if has_image:
