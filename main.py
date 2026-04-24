@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, date
+import importlib
+import os
 import zoneinfo
 
 from astrbot.api import logger
@@ -10,8 +13,33 @@ from astrbot.api.star import Context, Star, register
 from astrbot.api.all import AstrBotConfig
 from astrbot.core.platform.message_type import MessageType
 
-import chinese_calendar as calendar_cn
-from lunarcalendar import Converter, Solar
+calendar_cn = None
+Converter = None
+Solar = None
+CHINESE_CALENDAR_AVAILABLE = False
+LUNAR_CALENDAR_AVAILABLE = False
+
+
+def _load_calendar_dependencies() -> None:
+    global calendar_cn, Converter, Solar
+    global CHINESE_CALENDAR_AVAILABLE, LUNAR_CALENDAR_AVAILABLE
+
+    try:
+        calendar_cn = importlib.import_module("chinese_calendar")
+        CHINESE_CALENDAR_AVAILABLE = True
+    except ImportError:
+        calendar_cn = None
+        CHINESE_CALENDAR_AVAILABLE = False
+
+    try:
+        lunarcalendar = importlib.import_module("lunarcalendar")
+        Converter = lunarcalendar.Converter
+        Solar = lunarcalendar.Solar
+        LUNAR_CALENDAR_AVAILABLE = True
+    except ImportError:
+        Converter = None
+        Solar = None
+        LUNAR_CALENDAR_AVAILABLE = False
 
 
 # 农历月份和日期的中文表示
@@ -181,14 +209,66 @@ class MyPlugin(Star):
             self.timezone = zoneinfo.ZoneInfo("Asia/Shanghai")
             timezone_name = "Asia/Shanghai"
 
+        _load_calendar_dependencies()
+        self._dependency_check_task = None
+        if not CHINESE_CALENDAR_AVAILABLE or not LUNAR_CALENDAR_AVAILABLE:
+            self._schedule_optional_dependency_check(context)
+
         # 记录插件加载信息
+        calendar_status = (
+            "已启用" if CHINESE_CALENDAR_AVAILABLE else "受限(等待后台依赖检查)"
+        )
+        lunar_status = (
+            "已启用" if LUNAR_CALENDAR_AVAILABLE else "受限(等待后台依赖检查)"
+        )
         logger.info(
             f"LLMPerception 插件已加载 | 时区: {timezone_name} | "
-            f"节假日感知: {self.enable_holiday}(已启用) | "
+            f"节假日感知: {self.enable_holiday}({calendar_status}) | "
             f"平台感知: {self.enable_platform} | "
-            f"农历感知: {self.enable_lunar}(已启用) | "
+            f"农历感知: {self.enable_lunar}({lunar_status}) | "
             f"节气感知: {self.enable_solar_term} | "
             f"黄历感知: {self.enable_almanac}"
+        )
+
+    def _schedule_optional_dependency_check(self, context: Context) -> None:
+        try:
+            self._dependency_check_task = asyncio.create_task(
+                self._install_and_reload_optional_dependencies(context)
+            )
+        except RuntimeError as exc:
+            logger.warning(f"LLMPerception: 无法启动后台依赖检查任务: {exc}")
+
+    async def _install_and_reload_optional_dependencies(self, context: Context) -> None:
+        plugin_dir_path = os.path.dirname(__file__)
+        plugin_label = os.path.basename(plugin_dir_path)
+        star_manager = getattr(context, "_star_manager", None)
+        ensure_requirements = getattr(star_manager, "_ensure_plugin_requirements", None)
+
+        if not callable(ensure_requirements):
+            logger.warning("LLMPerception: AstrBot 依赖检查接口不可用，跳过后台安装")
+            self._log_optional_dependency_status()
+            return
+
+        try:
+            await ensure_requirements(plugin_dir_path, plugin_label)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning(
+                f"LLMPerception: 后台安装可选依赖失败，将使用降级功能: {exc}"
+            )
+
+        _load_calendar_dependencies()
+        self._log_optional_dependency_status()
+
+    @staticmethod
+    def _log_optional_dependency_status() -> None:
+        calendar_status = "已启用" if CHINESE_CALENDAR_AVAILABLE else "不可用"
+        lunar_status = "已启用" if LUNAR_CALENDAR_AVAILABLE else "不可用"
+        logger.info(
+            "LLMPerception 可选依赖检查完成 | "
+            f"chinese-calendar: {calendar_status} | "
+            f"lunarcalendar: {lunar_status}"
         )
 
     def _get_holiday_info(self, current_time: datetime) -> str:
@@ -203,7 +283,11 @@ class MyPlugin(Star):
         info_parts.append(WEEKDAY_NAMES[weekday])
 
         # 使用 chinese-calendar 库进行节假日判断（仅支持中国）
-        if self.holiday_country == "CN":
+        if (
+            self.holiday_country == "CN"
+            and CHINESE_CALENDAR_AVAILABLE
+            and calendar_cn is not None
+        ):
             current_date = date(current_time.year, current_time.month, current_time.day)
 
             # 判断是否为法定节假日
@@ -259,7 +343,12 @@ class MyPlugin(Star):
 
     def _get_lunar_info(self, current_time: datetime) -> str:
         """获取农历日期信息"""
-        if not self.enable_lunar:
+        if (
+            not self.enable_lunar
+            or not LUNAR_CALENDAR_AVAILABLE
+            or Solar is None
+            or Converter is None
+        ):
             return ""
 
         try:
@@ -286,7 +375,7 @@ class MyPlugin(Star):
 
     def _get_solar_term_info(self, current_time: datetime) -> str:
         """获取节气信息"""
-        if not self.enable_solar_term:
+        if not self.enable_solar_term or not LUNAR_CALENDAR_AVAILABLE:
             return ""
 
         try:
